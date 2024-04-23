@@ -144,9 +144,10 @@ def oneStep_PDiff(self, context):
         ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_get('co', after_sk_co)
         after_sk_co = np.reshape(after_sk_co,(inst.vc, 3))
         
+        diff_loss = (before_loss > after_loss)
         
-        before_co = (before_loss <= after_loss)[:,None] * before_sk_co
-        current_co = (before_loss > after_loss)[:,None] * after_sk_co.copy()
+        before_co = (1-diff_loss)[:,None] * before_sk_co
+        current_co = diff_loss[:,None] * after_sk_co.copy()
         update_apply = before_co + current_co
         
         
@@ -154,8 +155,11 @@ def oneStep_PDiff(self, context):
         glob_dg.update()
         ob.data.update()
         
-        current_direct_v = (before_loss > after_loss)[:,None] * inst.direct
-        new_direct_v = ((before_loss <= after_loss)[:,None] * np.random.randn(inst.vc,3))* ob.MKVBS.learning_rate
+        stay_lr = (inst.direct * ob.MKVBS.learning_rate) <= 1e-6
+        leave_lr = (1-stay_lr) * ob.MKVBS.learning_rate
+        
+        current_direct_v = diff_loss[:,None] * inst.direct
+        new_direct_v = ((1-diff_loss)[:,None] * np.random.randn(inst.vc,3)) * (stay_lr + leave_lr)
         
         inst.direct = current_direct_v + new_direct_v
         
