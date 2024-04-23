@@ -140,6 +140,7 @@ def oneStep_PDiff(self, context):
         after_loss = np.sqrt(np.einsum('ij,ij->i', after_loss_v, after_loss_v))
         
         
+        
         after_sk_co = np.empty(inst.vc*3, dtype=np.float32)
         ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_get('co', after_sk_co)
         after_sk_co = np.reshape(after_sk_co,(inst.vc, 3))
