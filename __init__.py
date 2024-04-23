@@ -29,7 +29,7 @@ from timeit import default_timer as timer
 
 shapekey_n = 'MKVBS'
 threshold = 1e-4
-learning_rate = 1e-2
+learning_rate = 1e-1
 
 
 
@@ -116,52 +116,52 @@ def oneStep_PDiff(self, context):
             inst = MKVBS_data['inst'][ob.MKVBS.inst_id]
         
         
-        before_co = np.empty(inst.vc*3, dtype=np.float32)
-        glob_dg.objects[ob.name].data.vertices.foreach_get('co', before_co)
-        before_co = np.reshape(before_co,(inst.vc, 3))
+        before_vis_co = np.empty(inst.vc*3, dtype=np.float32)
+        glob_dg.objects[ob.name].data.vertices.foreach_get('co', before_vis_co)
+        before_vis_co = np.reshape(before_vis_co,(inst.vc, 3))
         
-        before_loss_v = inst.target_co - before_co
+        before_sk_co = np.empty(inst.vc*3, dtype=np.float32)
+        ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_get('co', before_sk_co.ravel())
+        before_sk_co = np.reshape(before_sk_co, (inst.vc, 3))
         
         ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_set('co', (inst.base_co + inst.direct).flatten())
         glob_dg.update()
         ob.data.update()
         
-        after_co = np.empty(inst.vc*3, dtype=np.float32)
-        ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_get('co', after_co)
-        after_co = np.reshape(after_co,(inst.vc, 3))
-        
-        after_loss_v = inst.target_co - after_co
+        after_vis_co = np.empty(inst.vc*3, dtype=np.float32)
+        glob_dg.objects[ob.name].data.vertices.foreach_get('co', after_vis_co)
+        after_vis_co = np.reshape(after_vis_co,(inst.vc, 3))
         
         
-        before_loss_x = before_loss_v[:, 0]
-        before_loss_y = before_loss_v[:, 1]
-        before_loss_z = before_loss_v[:, 2]
+        before_loss_v = inst.target_co - before_vis_co
+        after_loss_v = inst.target_co - after_vis_co
         
-        after_loss_x = after_loss_v[:, 0]
-        after_loss_y = after_loss_v[:, 1]
-        after_loss_z = after_loss_v[:, 2]
+        before_loss = np.sqrt(np.einsum('ij,ij->i', before_loss_v, before_loss_v))
+        after_loss = np.sqrt(np.einsum('ij,ij->i', after_loss_v, after_loss_v))
         
-        update_apply = after_co
         
-        update_apply_x = np.abs(before_loss_x) < np.abs(after_loss_x)
-        update_apply_y = np.abs(before_loss_y) < np.abs(after_loss_y)
-        update_apply_z = np.abs(before_loss_z) < np.abs(after_loss_z)
+        after_vis_co = np.empty(inst.vc*3, dtype=np.float32)
+        ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_get('co', after_vis_co)
+        after_vis_co = np.reshape(after_vis_co,(inst.vc, 3))
         
-        update_apply[:,0] = update_apply_x * inst.base_co[:,0]
-        update_apply[:,1] = update_apply_y * inst.base_co[:,1]
-        update_apply[:,2] = update_apply_z * inst.base_co[:,2]
+        
+        before_co = (before_loss <= after_loss)[:,None] * before_sk_co
+        current_co = (before_loss > after_loss)[:,None] * after_vis_co.copy()
+        update_apply = before_co + current_co
+        
         
         ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_set('co', update_apply.flatten())
         glob_dg.update()
         ob.data.update()
         
-        inst.direct[:,0] = update_apply_x * np.random.randn(inst.vc) * ob.MKVBS.learning_rate
-        inst.direct[:,1] = update_apply_y * np.random.randn(inst.vc) * ob.MKVBS.learning_rate
-        inst.direct[:,2] = update_apply_z * np.random.randn(inst.vc) * ob.MKVBS.learning_rate
+        current_direct_v = (before_loss > after_loss)[:,None] * inst.direct
+        new_direct_v = ((before_loss <= after_loss)[:,None] * np.random.randn(inst.vc,3))* ob.MKVBS.learning_rate
         
-        print('\n')
+        inst.direct = current_direct_v + new_direct_v
         
-        
+        print('')
+    
+    
     return
 
 
@@ -191,7 +191,7 @@ class MKVBS_PropsObject(bpy.types.PropertyGroup):
     bpy.props.FloatProperty(name="threshold", description="Threshold about difference", default=threshold)
     
     learning_rate:\
-    bpy.props.FloatProperty(name="learning_rate", description="Update step", default=learning_rate)
+    bpy.props.FloatProperty(name="learning_rate", description="Update step", default=learning_rate, min=0.0)
     
     true_target:\
     bpy.props.BoolProperty(name="True Target", description="", default=False)
@@ -207,7 +207,7 @@ class MKVBS_PropsScene(bpy.types.PropertyGroup):
     bpy.props.BoolProperty(name="One Step", description="Just One loop on / off", default=False, update=oneStep_PDiff)
     
     delay:\
-    bpy.props.FloatProperty(name="Auto loop delay", description="Auto loop delay", default=0.1)
+    bpy.props.FloatProperty(name="Auto loop delay", description="Auto loop delay", default=0.0)
     
 
 
