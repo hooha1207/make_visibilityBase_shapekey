@@ -192,9 +192,6 @@ def oneStep_PDiff():
         glob_dg.update()
         base_ob.data.update()
         
-        if np.all(1-diff_loss):
-            continue
-        
         inst.use_learning_rate = (np.random.normal(0,1,(inst.vc,1))) * base_ob.MKVBS.learning_rate
         
         current_direct_v = (diff_loss[:,None] * inst.direct) * base_ob.MKVBS.learning_rate
@@ -205,24 +202,6 @@ def oneStep_PDiff():
         # print(inst.direct)
         
         inst.direct = current_direct_v + new_direct_v
-        inst.direct = np.reshape(inst.direct,(inst.vc,3))
-        
-        least_direct_b = 1e-6 > (np.sqrt(np.einsum('ij,ij->i',inst.direct,inst.direct)))
-        # print(least_direct_b)
-        least_direct_v = np.random.normal(0,1,(inst.vc,1))
-        least_direct_uv = least_direct_v / np.sqrt(np.einsum('ij,ij->i',least_direct_v,least_direct_v))[:,None]
-        least_direct_v = least_direct_uv * 1e-5
-        least_direct = least_direct_b[:,None] * least_direct_v
-        
-        stay_direct = (False==least_direct_b)[:,None] * inst.direct
-        # print(stay_direct)
-        # print(least_direct_b)
-        # print(least_direct_b.shape)
-        
-        
-        inst.direct = least_direct + stay_direct
-        inst.direct = np.reshape(inst.direct,(inst.vc,3))
-        # inst.direct = inst.direct * np.random.normal(0,1,(inst.vc,3))
         
         
         # print('')

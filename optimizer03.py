@@ -117,6 +117,17 @@ def cb_target(self, context):
     ob.active_shape_key_index = ob.data.shape_keys.key_blocks.find(inst.shapekey_n)
     
     inst.direct = np.random.randn(inst.vc,3)
+    inst.direct_uv = inst.direct / (np.sqrt(np.einsum('ij,ij->i',inst.direct,inst.direct)))[:, None]
+    inst.direct_uv = np.reshape(inst.direct_uv,(inst.vc,3))
+    inst.direct_length = np.random.normal(0,2,(inst.vc))
+    
+    
+    inst.vis_base_co = np.empty(inst.vc*3, dtype=np.float64)
+    glob_dg.objects[inst.base_obn].data.vertices.foreach_get('co', inst.vis_base_co)
+    inst.vis_base_co = np.reshape(inst.target_co,(inst.vc,3))
+    
+    inst.init_loss = np.sqrt(np.einsum('ij,ij->i', inst.target_co - inst.vis_base_co, inst.target_co - inst.vis_base_co))
+    
     
     return
 
@@ -178,10 +189,9 @@ def oneStep_PDiff():
         # print(before_loss)
         # print(after_loss)
         diff_loss = before_loss > after_loss
-        # print(diff_loss)
+        print(diff_loss)
         
         
-        # print(diff_loss)
         before_co = (1-diff_loss)[:,None] * before_sk_co
         current_co = diff_loss[:,None] * after_sk_co
         update_apply = before_co + current_co
@@ -192,22 +202,21 @@ def oneStep_PDiff():
         glob_dg.update()
         base_ob.data.update()
         
-        if np.all(1-diff_loss):
-            continue
+        # vis_after_loss = np.sqrt(np.einsum('ij,ij->i', update_apply, update_apply))
+        # loss_average = 1-(np.sum(inst.init_loss - vis_after_loss) / np.sum(vis_after_loss))
+        # loss_scale = vis_after_loss / inst.init_loss
         
-        inst.use_learning_rate = (np.random.normal(0,1,(inst.vc,1))) * base_ob.MKVBS.learning_rate
-        
-        current_direct_v = (diff_loss[:,None] * inst.direct) * base_ob.MKVBS.learning_rate
-        new_direct_v = ((1-diff_loss)[:,None] * np.random.randn(inst.vc,3)) * inst.use_learning_rate[None]
-        
-        # print(least_direct_b)
-        # print(least_direct_b.shape)
-        # print(inst.direct)
+        current_direct_v = diff_loss[:,None] * inst.direct
+        # new_direct_v = (False==diff_loss)[:,None] * np.random.randn(inst.vc,3)
+        new_direct_v = np.random.randn(inst.vc,3)
+        new_direct_uv = new_direct_v / np.sqrt(np.einsum('ij,ij->i',new_direct_v,new_direct_v))[:,None]
+        new_direct_v = (False==diff_loss)[:,None] * (new_direct_uv * 1e-3)
         
         inst.direct = current_direct_v + new_direct_v
         inst.direct = np.reshape(inst.direct,(inst.vc,3))
+        # print(inst.direct)
         
-        least_direct_b = 1e-6 > (np.sqrt(np.einsum('ij,ij->i',inst.direct,inst.direct)))
+        least_direct_b = 1e-6 > np.sqrt(np.einsum('ij,ij->i',inst.direct,inst.direct))
         # print(least_direct_b)
         least_direct_v = np.random.normal(0,1,(inst.vc,1))
         least_direct_uv = least_direct_v / np.sqrt(np.einsum('ij,ij->i',least_direct_v,least_direct_v))[:,None]
@@ -222,13 +231,14 @@ def oneStep_PDiff():
         
         inst.direct = least_direct + stay_direct
         inst.direct = np.reshape(inst.direct,(inst.vc,3))
-        # inst.direct = inst.direct * np.random.normal(0,1,(inst.vc,3))
-        
+        inst.direct = inst.direct * np.random.normal(0,1,(inst.vc,3))
+        # print(inst.direct)
+        # print(inst.direct)
         
         # print('')
         # print('success')
 '''
-optimizer v01
+optimizer v03
 '''
 
 

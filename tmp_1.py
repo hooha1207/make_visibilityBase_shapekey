@@ -37,7 +37,8 @@ MKVBS_data['inst'] = {}
 
 
 class loopInfo():
-    pass
+    def __init__(self):
+        pass
 
 
 
@@ -49,10 +50,9 @@ def cb_target(self, context):
     
     bit_arr = np.array([0,0,0,0], dtype=np.int8)
     
-    # print([i.name for i in bpy.data.objects if i.type == 'MESH'])
-    if ob.MKVBS.target_obn in [i.name for i in bpy.data.objects if i.type == 'MESH']:
+    
+    if not ob.MKVBS.target_obn in [i.name for i in bpy.data.objects if i.type == 'MESH']:
         bit_arr[0] = 1
-        print('target select')
     else:
         print(f'{ob.MKVBS.target_obn} names Mesh Object not exist.')
         try:
@@ -91,9 +91,11 @@ def cb_target(self, context):
     
     
     
-    ob.MKVBS.inst_id = int(round(timer(),2) * 100)
+    ob.MKVBS.inst_id = round(timer(),2)
     MKVBS_data['inst'][ob.MKVBS.inst_id] = loopInfo()
     inst = MKVBS_data['inst'][ob.MKVBS.inst_id]
+    inst.base_ob = ob
+    inst.base_obn = ob.name
     inst.base_ob = ob
     inst.base_obn = ob.name
     
@@ -124,23 +126,9 @@ def cb_target(self, context):
 
 def oneStep_PDiff():
     current_mesh_obns = [i.name for i in bpy.data.objects if i.type=='MESH']
-    # insts = [MKVBS_data['inst'][i] for i in MKVBS_data['inst'].keys() if MKVBS_data['inst'][i].base_ob.MKVBS.loop_switch and MKVBS_data['inst'][i].base_obn in current_mesh_obns]
-    insts = []
-    for inst_id in MKVBS_data['inst'].keys():
-        bit_arr = np.array([0,0])
-        inst_ob = bpy.data.objects[MKVBS_data['inst'][inst_id].base_obn]
-        if inst_ob.MKVBS.loop_switch or inst_ob.MKVBS.one_step:
-            bit_arr[0] = 1
-        if MKVBS_data['inst'][inst_id].base_obn in current_mesh_obns:
-            bit_arr[1] = 1
-        if np.all(bit_arr):
-            insts.append(MKVBS_data['inst'][inst_id])
-    
-    insts += insts
-    # print(insts)
-    # print(MKVBS_data['inst'])
-    # insts += [MKVBS_data['inst'][i] for i in MKVBS_data['inst'].keys() if MKVBS_data['inst'][i].base_ob.MKVBS.loop_switch and MKVBS_data['inst'][i].base_obn in current_mesh_obns]
-    # print(insts)
+    insts = [MKVBS_data['inst'][i] for i in MKVBS_data['inst'].keys() if MKVBS_data['inst'][i].loop_switch and MKVBS_data['inst'][i].base_obn in current_mesh_obns]
+    print(insts)
+    insts += [MKVBS_data['inst'][i] for i in MKVBS_data['inst'].keys() if MKVBS_data['inst'][i].one_step and MKVBS_data['inst'][i].base_obn in current_mesh_obns]
     
     for inst in insts:
         base_ob = bpy.data.objects[inst.base_obn]
@@ -158,10 +146,9 @@ def oneStep_PDiff():
         base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_set('co', (inst.base_co + inst.direct).flatten())
         glob_dg.update()
         base_ob.data.update()
-        base_ob.update_from_editmode()
         
         after_vis_co = np.empty(inst.vc*3, dtype=np.float64)
-        glob_dg.objects[inst.base_obn].data.vertices.foreach_get('co', after_vis_co)
+        glob_dg.objects[base_ob.name].data.vertices.foreach_get('co', after_vis_co)
         after_vis_co = np.reshape(after_vis_co,(inst.vc, 3))
         
         
@@ -175,13 +162,8 @@ def oneStep_PDiff():
         base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_get('co', after_sk_co)
         after_sk_co = np.reshape(after_sk_co,(inst.vc, 3))
         
-        # print(before_loss)
-        # print(after_loss)
         diff_loss = before_loss > after_loss
-        # print(diff_loss)
         
-        
-        # print(diff_loss)
         before_co = (1-diff_loss)[:,None] * before_sk_co
         current_co = diff_loss[:,None] * after_sk_co
         update_apply = before_co + current_co
@@ -192,57 +174,36 @@ def oneStep_PDiff():
         glob_dg.update()
         base_ob.data.update()
         
-        if np.all(1-diff_loss):
-            continue
-        
         inst.use_learning_rate = (np.random.normal(0,1,(inst.vc,1))) * base_ob.MKVBS.learning_rate
         
         current_direct_v = (diff_loss[:,None] * inst.direct) * base_ob.MKVBS.learning_rate
         new_direct_v = ((1-diff_loss)[:,None] * np.random.randn(inst.vc,3)) * inst.use_learning_rate[None]
         
-        # print(least_direct_b)
-        # print(least_direct_b.shape)
-        # print(inst.direct)
+        # least_direct_b = (1e-6 >= (current_direct_v + new_direct_v))
+        # least_direct = least_direct_b[:,None] * inst.direct
+        # stay_direct = (1-least_direct_b)[:,None] * (current_direct_v + new_direct_v)
         
         inst.direct = current_direct_v + new_direct_v
-        inst.direct = np.reshape(inst.direct,(inst.vc,3))
-        
-        least_direct_b = 1e-6 > (np.sqrt(np.einsum('ij,ij->i',inst.direct,inst.direct)))
-        # print(least_direct_b)
-        least_direct_v = np.random.normal(0,1,(inst.vc,1))
-        least_direct_uv = least_direct_v / np.sqrt(np.einsum('ij,ij->i',least_direct_v,least_direct_v))[:,None]
-        least_direct_v = least_direct_uv * 1e-5
-        least_direct = least_direct_b[:,None] * least_direct_v
-        
-        stay_direct = (False==least_direct_b)[:,None] * inst.direct
-        # print(stay_direct)
-        # print(least_direct_b)
-        # print(least_direct_b.shape)
-        
-        
-        inst.direct = least_direct + stay_direct
-        inst.direct = np.reshape(inst.direct,(inst.vc,3))
-        # inst.direct = inst.direct * np.random.normal(0,1,(inst.vc,3))
+        # inst.direct = least_direct + stay_direct
+        # inst.direct = ( least_direct_b[:,None] * inst.direct ) + ( (1-least_direct_b)[:,None] * (current_direct_v + new_direct_v) )
         
         
         # print('')
-        # print('success')
-'''
-optimizer v01
-'''
+    return
+
 
 
 @persistent
 def update_realtime(scene=None):
     oneStep_PDiff()
-    # print('realtime')
+    print('realtime')
     return 0.0
 
 
 
 class MKVBS_PropsObject(bpy.types.PropertyGroup):
     inst_id:\
-    bpy.props.IntProperty(name="Instance ID", description="Unique Instance ID")
+    bpy.props.FloatProperty(name="Instance ID", description="Unique Instance ID")
     
     target_obn:\
     bpy.props.StringProperty(name="Visibility Target Object Name", description="Set Target object name", update=cb_target)
@@ -307,25 +268,27 @@ class PANEL_PT_MKVBS(bpy.types.Panel):
         col.scale_y = 1.0
         col.prop(ob.MKVBS, "shapekey_n", text='')
         
-        col = layout.column(align=True)
-        col.scale_y = 1.5
-        col.prop(ob.MKVBS, "loop_switch", text="Auto Loop On / Off", icon='CON_PIVOT')
         
-        col = layout.column(align=True)
-        col.scale_y = 1.5
-        col.prop(ob.MKVBS, "one_step", text="Just One Step", icon='CON_PIVOT')
-        
-        layout.separator()
-        
-        col = layout.column(align=True)
-        col.scale_y = 1.5
-        col.prop(ob.MKVBS, "threshold", text="Difference Threshold", icon='FULLSCREEN_EXIT')
-        
-        col = layout.column(align=True)
-        col.scale_y = 1.5
-        col.prop(ob.MKVBS, "learning_rate", text="Leanring Rate", icon='FULLSCREEN_EXIT')
-        
-        # layout.separator()
+        if ob.MKVBS.true_target:
+            col = layout.column(align=True)
+            col.scale_y = 1.5
+            col.prop(ob.MKVBS, "loop_switch", text="Auto Loop On / Off", icon='CON_PIVOT')
+            
+            col = layout.column(align=True)
+            col.scale_y = 1.5
+            col.prop(ob.MKVBS, "one_step", text="Just One Step", icon='CON_PIVOT')
+            
+            layout.separator()
+            
+            col = layout.column(align=True)
+            col.scale_y = 1.5
+            col.prop(ob.MKVBS, "threshold", text="Difference Threshold", icon='FULLSCREEN_EXIT')
+            
+            col = layout.column(align=True)
+            col.scale_y = 1.5
+            col.prop(ob.MKVBS, "learning_rate", text="Leanring Rate", icon='FULLSCREEN_EXIT')
+            
+            # layout.separator()
 
 
 
