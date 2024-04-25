@@ -231,7 +231,7 @@ def oneStep_PDiff():
         
         inst.direct = least_direct + stay_direct
         inst.direct = np.reshape(inst.direct,(inst.vc,3))
-        inst.direct = inst.direct * np.random.normal(0,1,(inst.vc,3))
+        # inst.direct = inst.direct * np.random.normal(0,1,(inst.vc,3))
         # print(inst.direct)
         # print(inst.direct)
         
