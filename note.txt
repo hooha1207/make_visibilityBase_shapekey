@@ -1,2 +1,6 @@
 mode를 바꾸더라도 편미분이 멈추지 않도록 보완하기
+(sculpt mode에서는 편미분이 멈추지 않음)
+edit mode에서도 실행 되도록 만들기
+(deform에 영향을 준 modifier가 edit mode에서도 적용되어 보이도록 수정하기)
+
 

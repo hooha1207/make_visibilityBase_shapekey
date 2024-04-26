@@ -1,0 +1,100 @@
+class 초기 설정
+{
+target mesh의 position_tg를 저장할 배열
+
+미시 단위
+확대 단위
+
+랜덤한 vector를 만들고 direct에 저장한다
+direct 각 요소마다의 길이값을 구한 뒤 이를 direct에 나눠서 얻은 direct_u를 구한다
+direct_u에 미시 단위를 곱한 vector 배열을 direct에 저장한다
+
+각 요소의 (1-diff_loss)가 얼마나 쌓였는지를 저장할 배열 stack
+np.empty(vc)로 만든 배열을 stack에 저장한다
+}
+
+
+
+step 2
+{
+mesh object의 업데이트 전 position_vis_before를 구한다
+
+mesh object의 업데이트 전 position_sk_before를 구한다
+
+초기 position에 direct를 더한 position_d 배열을 shapekey position에 대입한다
+(업데이트)
+
+mesh object의 업데이트 후 position_vis_after를 구한다
+
+mesh object의 업데이트 후 position_sk_after를 구한다
+
+
+
+(position_tg - position_ev_before)를 내적 후 루트값을 구해 vector의 길이 배열 loss_before을 구한다
+(position_tg - position_ev_after)를 내적 후 루트값을 구해 vector의 길이 배열 loss_after를 구한다
+loss_diff = loss_after > loss_before
+
+loss_diff가 True인 요소는 업데이트 후 position을 삭제하고 before_sk_pos로 대체하고,
+loss_diff가 False인 요소는 업데이트 후 position을 유지한 vector 배열
+update_apply을 만들어준다
+
+현 position을 update_apply으로 업데이트한다
+(부분 업데이트)
+
+
+
+inst.stack에 (1-loss_diff)를 더한 배열을 inst.stack에 덮어쓴다
+inst.stack에 (1-diff_loss) 배열을 곱해서 affter_loss가 더 큰 요소의 stack을 0으로 만든다
+
+
+loss_diff가 True인 요소는 direct 방향이 잘못되었다 판단해 랜덤값으로 방향을 새로 정의해준다 == direct_new
+direct_new의 단위 벡터 배열을 만들어서 inst.direct_new_u에 저장한다
+
+
+loss_diff가 False인 요소는 direct 방향이 맞다 판단해 방향을 유지한다 == direct_stay
+direct_stay 단위 벡터 배열을 만들어서 inst.direct_stay_u에 저장한다
+
+inst.direct에 direct_new_u와 direct_stay_u의 각 요소를 더한 배열을 저장한다
+
+(inst.direct * inst.stack * 축소 단위) 로 구한 배열을 inst.direct에 덮어쓴다
+}
+
+
+
+step 1
+{
+mesh object의 업데이트 전 position_vis_before를 구한다
+
+mesh object의 업데이트 전 position_sk_before를 구한다
+
+초기 position에 direct를 더한 position_d 배열을 shapekey position에 대입한다
+(업데이트)
+
+mesh object의 업데이트 후 position_vis_after를 구한다
+
+mesh object의 업데이트 후 position_sk_after를 구한다
+
+
+
+(position_tg - position_ev_before)를 내적 후 루트값을 구해 vector의 길이 배열 loss_before을 구한다
+(position_tg - position_ev_after)를 내적 후 루트값을 구해 vector의 길이 배열 loss_after를 구한다
+loss_diff = loss_after > loss_before
+
+loss_diff가 True인 요소는 업데이트 후 position을 삭제하고 before_sk_pos로 대체하고,
+loss_diff가 False인 요소는 업데이트 후 position을 유지한 vector 배열
+update_apply을 만들어준다
+
+
+
+loss_diff가 True인 요소는 direct 방향이 잘못되었다 판단해 랜덤값으로 방향을 새로 정의해준다 == direct_new
+direct_new의 단위 벡터 배열을 만들어서 inst.direct_new_u에 저장한다
+inst.direct_new_u에 미시 단위 값 1e-4를 곱해준 vector 배열을 direct_new에 덮어쓴다
+
+loss_diff가 False인 요소는 direct 방향이 맞다 판단해 방향을 유지한다 == direct_stay
+direct_stay 단위 벡터 배열을 만들어서 inst.direct_stay_u에 저장한다
+inst.direct_stay_u 배열과 direct_stay의 length 배열에 확대 단위를 곱해준 배열을
+곱한 vector 배열을 direct_stay에 덮어쓴다
+
+inst.direct에 direct_new와 direct_stay의 각 요소를 더한 배열을 저장해
+다음 업데이트에 사용할 수 있게 만든다
+}

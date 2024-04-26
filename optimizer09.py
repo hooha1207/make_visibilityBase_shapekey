@@ -23,8 +23,9 @@ from timeit import default_timer as timer
 
 shapekey_n = 'MKVBS'
 threshold = 1e-4
-learning_rate = 5e-2
+learning_rate = 1e-4
 
+start_LR = 1e-1
 
 
 
@@ -98,15 +99,20 @@ def cb_target(self, context):
     inst.base_obn = ob.name
     
     
+    ob.MKVBS.learning_rate = start_LR
+    
     
     inst.vc = len(ob.data.vertices)
-    inst.base_co = np.empty(inst.vc*3, dtype=np.float64)
-    ob.data.vertices.foreach_get('co', inst.base_co)
-    inst.base_co = np.reshape(inst.base_co, (inst.vc,3))
     
-    inst.target_co = np.empty(inst.vc*3, dtype=np.float64)
-    glob_dg.objects[ob.MKVBS.target_obn].data.vertices.foreach_get('co', inst.target_co)
+    
+    inst.target_co = np.empty((inst.vc,3), dtype=np.float64)
+    idx = 0
+    for v in glob_dg.objects[ob.MKVBS.target_obn].data.vertices:
+        inst.target_co[idx] = np.array(v.co)
+        idx+=1
     inst.target_co = np.reshape(inst.target_co,(inst.vc,3))
+    
+    
     
     inst.shapekey_n = ob.MKVBS.shapekey_n
     if bit_arr[3] == 0:
@@ -115,32 +121,53 @@ def cb_target(self, context):
         pass
     ob.data.shape_keys.key_blocks[inst.shapekey_n].value = 1.0
     ob.active_shape_key_index = ob.data.shape_keys.key_blocks.find(inst.shapekey_n)
+    glob_dg.update()
+    ob.data.update()
+    
+    inst.base_co = np.empty((inst.vc,3), dtype=np.float64)
+    idx = 0
+    for v in glob_dg.objects[inst.base_obn].data.shape_keys.key_blocks[ob.MKVBS.shapekey_n].data:
+        inst.base_co[idx] = np.array(v.co)
+        idx+=1
+    inst.base_co = np.reshape(inst.base_co, (inst.vc,3))
+    
+    
+    inst.stack = np.empty(inst.vc)
     
     inst.direct = np.random.randn(inst.vc,3)
-    
+    inst.direct_u = inst.direct / (np.sqrt(np.einsum('ij,ij->i',inst.direct,inst.direct)))[:,None]
+    inst.direct = inst.direct_u
+
+    inst.init_loss = np.sqrt(np.einsum('ij,ij->i', (inst.target_co-inst.base_co), (inst.target_co-inst.base_co)))
+
     return
 
 
 
 def oneStep_PDiff(inst):
-    # print(inst)
     
+    # print(inst.target_co)
     base_ob = bpy.data.objects[inst.base_obn]
     if base_ob.MKVBS.one_step:
         base_ob.MKVBS.one_step = False
     
-    before_vis_co = np.empty(inst.vc*3, dtype=np.float64)
-    glob_dg.objects[inst.base_obn].data.vertices.foreach_get('co', before_vis_co)
+    # mesh object의 업데이트 전 position_vis_before를 구한다
+    before_vis_co = np.empty((inst.vc,3), dtype=np.float64)
+    idx = 0
+    for v in glob_dg.objects[inst.base_obn].data.vertices:
+        before_vis_co[idx] = np.array(v.co)
+        idx+=1
     before_vis_co = np.reshape(before_vis_co,(inst.vc, 3))
     
-    before_sk_co = np.empty(inst.vc*3, dtype=np.float64)
-    base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_get('co', before_sk_co)
+    # mesh object의 업데이트 전 position_sk_before를 구한다
+    before_sk_co = np.empty((inst.vc,3), dtype=np.float64)
+    idx = 0
+    for v in base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data:
+        before_sk_co[idx] = np.array(v.co)
+        idx+=1
     before_sk_co = np.reshape(before_sk_co, (inst.vc, 3))
     
-    # base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_set('co', (before_sk_co + inst.direct).flatten())
-    # 왜째서 이게 문제가 되는 건데..
-    # 증상으로는 position을 업데이트 해도 depsgraph에는 적용되지 않는 문제 발생
-    # 그런데 일정 delay가 존재할 경우 또 잘됨
+    # (업데이트)
     idx = 0
     for v in base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data:
         v.co = (before_sk_co + inst.direct)[idx]
@@ -148,9 +175,23 @@ def oneStep_PDiff(inst):
     glob_dg.update()
     base_ob.data.update()
     
-    after_vis_co = np.empty(inst.vc*3, dtype=np.float64)
-    glob_dg.objects[inst.base_obn].data.vertices.foreach_get('co', after_vis_co)
+    # mesh object의 업데이트 후 position_vis_after를 구한다
+    after_vis_co = np.empty((inst.vc,3), dtype=np.float64)
+    idx = 0
+    for v in glob_dg.objects[inst.base_obn].data.vertices:
+        after_vis_co[idx] = np.array(v.co)
+        idx+=1
     after_vis_co = np.reshape(after_vis_co,(inst.vc, 3))
+    
+    # mesh object의 업데이트 후 position_sk_after를 구한다
+    after_sk_co = np.empty((inst.vc,3), dtype=np.float64)
+    idx = 0
+    for v in base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data:
+        after_sk_co[idx] = np.array(v.co)
+        idx+=1
+    after_sk_co = np.reshape(after_sk_co,(inst.vc, 3))
+    
+    
     
     before_loss_v = inst.target_co - before_vis_co
     after_loss_v = inst.target_co - after_vis_co
@@ -158,21 +199,14 @@ def oneStep_PDiff(inst):
     after_loss = np.sqrt(np.einsum('ij,ij->i', after_loss_v, after_loss_v))
     
     diff_loss = before_loss > after_loss
+    # print(diff_loss)
     
-    
-    after_sk_co = np.empty(inst.vc*3, dtype=np.float64)
-    base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_get('co', after_sk_co)
-    after_sk_co = np.reshape(after_sk_co,(inst.vc, 3))
-    
-    
+    # update_applt 배열 생성
     before_co = (1-diff_loss)[:,None] * before_sk_co
     current_co = (0+diff_loss)[:,None] * after_sk_co
     update_apply = before_co + current_co
     
-    # base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_set('co', update_apply.flatten())
-    # 왜째서 이게 문제가 되는 건데..
-    # 증상으로는 position을 업데이트 해도 depsgraph에는 적용되지 않는 문제 발생
-    # 그런데 일정 delay가 존재할 경우 또 잘됨
+    # 부분 업데이트
     idx = 0
     for v in base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data:
         v.co = update_apply[idx]
@@ -180,31 +214,43 @@ def oneStep_PDiff(inst):
     glob_dg.update()
     base_ob.data.update()
     
-    check_after_sk_co = np.empty(inst.vc*3, dtype=np.float64)
-    base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_get('co', check_after_sk_co)
-    check_after_sk_co = np.reshape(check_after_sk_co,(inst.vc, 3))
+
+    inst.current_loss = np.sqrt(np.einsum('ij,ij->i', (inst.target_co - update_apply), (inst.target_co - update_apply)))
+
+    learning_rate = 1 - np.nan_to_num((inst.init_loss - inst.current_loss) / inst.init_loss)
+
     
-    inst.use_learning_rate = (np.random.normal(0,1,(inst.vc,1))) * base_ob.MKVBS.learning_rate
+    inst.stack += (0+diff_loss)
+    inst.stack *= (0+diff_loss)
     
-    current_direct_v = ((0-diff_loss)[:,None] * inst.direct) * base_ob.MKVBS.learning_rate
-    new_direct_v = ((1-diff_loss)[:,None] * np.random.randn(inst.vc,3)) * inst.use_learning_rate[None]
+    current_direct_v = inst.direct_u * (inst.stack+1)[:,None] * learning_rate[:,None]
+    new_direct_v = np.random.randn(inst.vc,3)
+    new_direct_u = new_direct_v / np.sqrt(np.einsum('ij,ij->i',new_direct_v,new_direct_v))[:,None]
+    new_direct_v = new_direct_u * (inst.stack+1)[:,None] * learning_rate[:,None]
+    
+    # print(current_direct_v)
+    # print(new_direct_v)
     
     inst.direct = current_direct_v + new_direct_v
     inst.direct = np.reshape(inst.direct,(inst.vc,3))
     
-    least_direct_b = 1e-6 > (np.sqrt(np.einsum('ij,ij->i',inst.direct,inst.direct)))
-    least_direct_v = np.random.normal(0,1,(inst.vc,1))
-    least_direct_uv = least_direct_v / np.sqrt(np.einsum('ij,ij->i',least_direct_v,least_direct_v))[:,None]
-    least_direct_v = least_direct_uv * 1e-5
-    least_direct = (0+least_direct_b)[:,None] * least_direct_v
-    
-    stay_direct = (1-least_direct_b)[:,None] * inst.direct
-    
-    inst.direct = least_direct + (stay_direct * base_ob.MKVBS.learning_rate)
-    inst.direct = np.reshape(inst.direct,(inst.vc,3))
+    inst.direct_u = (inst.direct*10000) / np.sqrt(np.einsum('ij,ij->i',(inst.direct*10000), (inst.direct*10000)))[:,None]
     
     
-    inst.direct = np.random.randn(inst.vc,3)
+    # direct_length = np.sqrt(np.einsum('ij,ij->i',inst.direct,inst.direct))
+    # direct_length = np.nan_to_num(direct_length)
+    # least_direct_b = base_ob.MKVBS.learning_rate > direct_length
+    # least_direct_v = np.random.normal(0,1,(inst.vc,1))
+    # least_direct_u = least_direct_v / np.sqrt(np.einsum('ij,ij->i',least_direct_v,least_direct_v))[:,None]
+    # least_direct_v = least_direct_u * base_ob.MKVBS.learning_rate
+    # least_direct = (0+least_direct_b)[:,None] * least_direct_v
+    
+    # stay_direct = (1-least_direct_b)[:,None] * inst.direct
+    
+    # inst.direct = least_direct + stay_direct
+    # inst.direct = np.reshape(inst.direct,(inst.vc,3))
+    # print(inst.direct,'\n')
+
 
 
 
@@ -235,7 +281,7 @@ class MKVBS_PropsObject(bpy.types.PropertyGroup):
     bpy.props.FloatProperty(name="threshold", description="Threshold about difference", default=threshold)
     
     learning_rate:\
-    bpy.props.FloatProperty(name="learning_rate", description="Update step", default=learning_rate, min=0.0)
+    bpy.props.FloatProperty(name="learning_rate", description="Update step", default=learning_rate, min=learning_rate)
     
     true_target:\
     bpy.props.BoolProperty(name="True Target", description="", default=False)
