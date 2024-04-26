@@ -138,7 +138,6 @@ def oneStep_PDiff(inst):
     before_sk_co = np.reshape(before_sk_co, (inst.vc, 3))
     
     # base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_set('co', (before_sk_co + inst.direct).flatten())
-    # 왜째서 이게 문제가 되는 건데..
     idx = 0
     for v in base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data:
         v.co = (before_sk_co + inst.direct)[idx]
@@ -168,7 +167,6 @@ def oneStep_PDiff(inst):
     update_apply = before_co + current_co
     
     # base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_set('co', update_apply.flatten())
-    # 왜째서 이게 문제가 되는 건데..
     idx = 0
     for v in base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data:
         v.co = update_apply[idx]

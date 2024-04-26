@@ -23,7 +23,7 @@ from timeit import default_timer as timer
 
 shapekey_n = 'MKVBS'
 threshold = 1e-4
-learning_rate = 5e-2
+learning_rate = 5e-1
 
 
 
@@ -123,85 +123,96 @@ def cb_target(self, context):
 
 
 def oneStep_PDiff(inst):
-    # print(inst)
     
     base_ob = bpy.data.objects[inst.base_obn]
     if base_ob.MKVBS.one_step:
         base_ob.MKVBS.one_step = False
     
+    # glob_dg.update()
     before_vis_co = np.empty(inst.vc*3, dtype=np.float64)
     glob_dg.objects[inst.base_obn].data.vertices.foreach_get('co', before_vis_co)
     before_vis_co = np.reshape(before_vis_co,(inst.vc, 3))
     
+    # print(before_co == before_vis_co)
+    
     before_sk_co = np.empty(inst.vc*3, dtype=np.float64)
-    base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_get('co', before_sk_co)
+    base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_get('co', before_sk_co.flatten())
     before_sk_co = np.reshape(before_sk_co, (inst.vc, 3))
     
-    # base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_set('co', (before_sk_co + inst.direct).flatten())
-    # 왜째서 이게 문제가 되는 건데..
-    idx = 0
-    for v in base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data:
-        v.co = (before_sk_co + inst.direct)[idx]
-        idx+=1
+    base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_set('co', (before_sk_co + inst.direct).flatten())
     glob_dg.update()
     base_ob.data.update()
+    # base_ob.update_from_editmode()
     
     after_vis_co = np.empty(inst.vc*3, dtype=np.float64)
     glob_dg.objects[inst.base_obn].data.vertices.foreach_get('co', after_vis_co)
     after_vis_co = np.reshape(after_vis_co,(inst.vc, 3))
     
+    # print(before_vis_co == after_vis_co)
+    
+    
     before_loss_v = inst.target_co - before_vis_co
     after_loss_v = inst.target_co - after_vis_co
+    
     before_loss = np.sqrt(np.einsum('ij,ij->i', before_loss_v, before_loss_v))
     after_loss = np.sqrt(np.einsum('ij,ij->i', after_loss_v, after_loss_v))
-    
-    diff_loss = before_loss > after_loss
-    
     
     after_sk_co = np.empty(inst.vc*3, dtype=np.float64)
     base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_get('co', after_sk_co)
     after_sk_co = np.reshape(after_sk_co,(inst.vc, 3))
     
+    # print(before_loss)
+    # print(after_loss)
+    diff_loss = before_loss > after_loss
+    # print(diff_loss)
     
+    
+    # print(diff_loss)
     before_co = (1-diff_loss)[:,None] * before_sk_co
-    current_co = (0+diff_loss)[:,None] * after_sk_co
+    current_co = diff_loss[:,None] * after_sk_co
     update_apply = before_co + current_co
+    # update_apply = ( (1-diff_loss)[:,None] * before_sk_co ) + ( diff_loss[:,None] * after_sk_co )
     
-    # base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_set('co', update_apply.flatten())
-    # 왜째서 이게 문제가 되는 건데..
-    idx = 0
-    for v in base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data:
-        v.co = update_apply[idx]
-        idx+=1
+    
+    base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_set('co', update_apply.flatten())
     glob_dg.update()
     base_ob.data.update()
     
-    check_after_sk_co = np.empty(inst.vc*3, dtype=np.float64)
-    base_ob.data.shape_keys.key_blocks[inst.shapekey_n].data.foreach_get('co', check_after_sk_co)
-    check_after_sk_co = np.reshape(check_after_sk_co,(inst.vc, 3))
+    # if np.all(1-diff_loss):
+    #     continue
     
     inst.use_learning_rate = (np.random.normal(0,1,(inst.vc,1))) * base_ob.MKVBS.learning_rate
     
-    current_direct_v = ((0-diff_loss)[:,None] * inst.direct) * base_ob.MKVBS.learning_rate
+    current_direct_v = (diff_loss[:,None] * inst.direct) * base_ob.MKVBS.learning_rate
     new_direct_v = ((1-diff_loss)[:,None] * np.random.randn(inst.vc,3)) * inst.use_learning_rate[None]
+    
+    # print(least_direct_b)
+    # print(least_direct_b.shape)
+    # print(inst.direct)
     
     inst.direct = current_direct_v + new_direct_v
     inst.direct = np.reshape(inst.direct,(inst.vc,3))
     
     least_direct_b = 1e-6 > (np.sqrt(np.einsum('ij,ij->i',inst.direct,inst.direct)))
+    # print(least_direct_b)
     least_direct_v = np.random.normal(0,1,(inst.vc,1))
     least_direct_uv = least_direct_v / np.sqrt(np.einsum('ij,ij->i',least_direct_v,least_direct_v))[:,None]
     least_direct_v = least_direct_uv * 1e-5
-    least_direct = (0+least_direct_b)[:,None] * least_direct_v
+    least_direct = least_direct_b[:,None] * least_direct_v
     
-    stay_direct = (1-least_direct_b)[:,None] * inst.direct
+    stay_direct = (False==least_direct_b)[:,None] * inst.direct
+    # print(stay_direct)
+    # print(least_direct_b)
+    # print(least_direct_b.shape)
     
-    inst.direct = least_direct + (stay_direct * base_ob.MKVBS.learning_rate)
+    
+    inst.direct = least_direct + stay_direct
     inst.direct = np.reshape(inst.direct,(inst.vc,3))
+    # inst.direct = inst.direct * np.random.normal(0,1,(inst.vc,3))
     
     
-    inst.direct = np.random.randn(inst.vc,3)
-
+    # print('')
+    # print('success')
 
 
 @persistent
@@ -210,7 +221,6 @@ def update_realtime(scene=None):
     insts = [MKVBS_data['inst'][i] for i in MKVBS_data['inst'].keys() if MKVBS_data['inst'][i].base_ob.MKVBS.loop_switch and MKVBS_data['inst'][i].base_obn in current_mesh_obns]
     insts += [MKVBS_data['inst'][i] for i in MKVBS_data['inst'].keys() if MKVBS_data['inst'][i].base_ob.MKVBS.one_step and MKVBS_data['inst'][i].base_obn in current_mesh_obns]
     
-    # print(insts)
     for inst in insts:
         oneStep_PDiff(inst)
     # print('realtime')
