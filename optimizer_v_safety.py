@@ -56,6 +56,16 @@ def cb_target(self, context):
         print('target select')
     elif ob.MKVBS.target_obn == ob.name:
         print(f'{ob.MKVBS.target_obn} name is same the base object')
+        try:
+            del MKVBS_data['inst'][ob.MKVBS.inst_id]
+            ob.MKVBS.inst_id = 0.0
+            if len(ob.data.shape_keys.key_blocks) <=2 and ob.data.shape_keys != None:
+                ob.shape_key_clear()
+            else:
+                ob.shape_key_remove(ob.data.shape_keys.key_blocks[ob.MKVBS.shapekey_n])
+            print(f'clear instance about {ob.name}. you must check mesh object name.')
+        except:
+            print('you must check mesh object name')
     else:
         print(f'{ob.MKVBS.target_obn} names Mesh Object not exist.')
         try:
