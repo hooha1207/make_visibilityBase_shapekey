@@ -54,6 +54,8 @@ def cb_target(self, context):
     if ob.MKVBS.target_obn in [i.name for i in bpy.data.objects if i.type == 'MESH']:
         bit_arr[0] = 1
         print('target select')
+    elif ob.MKVBS.target_obn == ob.name:
+        print(f'{ob.MKVBS.target_obn} name is same the base object')
     else:
         print(f'{ob.MKVBS.target_obn} names Mesh Object not exist.')
         try:
